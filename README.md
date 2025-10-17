@@ -1,108 +1,148 @@
 # Recruitment Task - Virtual Column
 
-Implementation of a function that adds virtual columns to a pandas DataFrame based on mathematical rules.
+Implementation of a function that adds virtual columns to pandas DataFrames based on mathematical rules.
 
 ## Task Description
 
 The `add_virtual_column` function takes a DataFrame, a mathematical rule, and a new column name, returning a DataFrame with the computed column based on the rule.
 
-### Functional Requirements:
+### Functional Requirements
+
 - Support for mathematical operations: `+`, `-`, `*`
-- Column name validation
+- Column name validation (snake_case with underscore)
 - Rule correctness validation
 - Whitespace handling in rules
-- Return empty DataFrame on errors
+- Empty DataFrame on validation errors
+- Type hints for type safety
+- Comprehensive edge case handling
 
 ## Environment Setup
 
 ### System Requirements
+
 - Python 3.13+
 - [uv](https://github.com/astral-sh/uv) - modern Python package manager
 
-### Instalacja uv (jeśli nie masz)
+### Installing uv (if not already installed)
+
 ```bash
 curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
-### Instalacja projektu
-```bash
-# Zainstaluj Python 3.13 i wszystkie zależności
-uv sync --dev
+### Project Installation
 
-# Aktywuj środowisko (opcjonalnie)
+```bash
+# Install Python 3.13 and all dependencies
+uv sync --all-extras
+
+# Activate environment (optional)
 source .venv/bin/activate
 ```
 
-## 🧪 Uruchamianie testów
+## 🧪 Running Tests
 
 ```bash
-# Uruchom wszystkie testy
+# Run all tests
 uv run pytest
 
-# Uruchom testy z większą szczegółowością
+# Run tests with verbose output
 uv run pytest -v
 
-# Uruchom konkretny test
+# Run a specific test
 uv run pytest -k test_sum_of_two_columns
 ```
 
-## 🔍 Quality Assurance
+## Quality Assurance
 
-### Linting i formatowanie (Ruff)
+### Linting and Formatting (Ruff)
+
 ```bash
-# Sprawdź kod pod kątem błędów
+# Check code for errors
 uv run ruff check .
 
-# Automatyczne formatowanie kodu
+# Auto-format code
 uv run ruff format .
 
-# Napraw automatycznie co się da
+# Auto-fix issues where possible
 uv run ruff check --fix .
 ```
 
-### Type checking (mypy)
+### Type Checking (mypy)
+
 ```bash
-# Sprawdź poprawność type hints
+# Verify type hints correctness
 uv run mypy solution.py
 ```
 
-### Uruchom wszystko jednocześnie
+### Run Everything
+
 ```bash
 # Format + lint + type check + tests
 uv run ruff format . && uv run ruff check . && uv run mypy solution.py && uv run pytest
 ```
 
-## 📁 Struktura projektu
+## Project Structure
 
 ```
 .
-├── pyproject.toml           # Konfiguracja projektu i zależności
-├── .python-version          # Wersja Pythona (3.13)
-├── .gitignore              # Pliki ignorowane przez git
-├── README.md               # Ten plik
-├── solution.py             # Implementacja rozwiązania
-├── test_virtual_column.py  # Testy jednostkowe
-└── task 1.pdf             # Opis zadania
+├── pyproject.toml              # Project configuration and dependencies
+├── .python-version             # Python version (3.13)
+├── .gitignore                  # Git ignore rules
+├── README.md                   # This file
+├── solution.py                 # Solution implementation
+├── test_virtual_column 1.py    # Unit tests
+└── task 1.pdf                  # Task description
 ```
 
-## 🛠️ Technologie
+## Technology Stack
 
-- **Python 3.13** - najnowsza wersja języka
-- **pandas** - manipulacja danymi
-- **pytest** - framework do testowania
-- **ruff** - ultraszybki linter i formatter
-- **mypy** - static type checker
-- **uv** - nowoczesny menedżer pakietów
+- **Python 3.13** - Latest stable Python release
+- **pandas 2.3+** - Data manipulation library
+- **pytest 8.4+** - Testing framework
+- **ruff 0.14+** - Ultra-fast linter and formatter
+- **mypy 1.18+** - Static type checker
+- **uv** - Modern Python package manager
 
-## 📝 Notatki dla rekruterów
+## Implementation Highlights
 
-Projekt wykorzystuje:
-- ✅ Najnowsze standardy Python (3.13, pyproject.toml)
-- ✅ Type hints dla bezpieczeństwa typów
-- ✅ Nowoczesne narzędzia deweloperskie (uv, ruff)
-- ✅ Kompletne testy jednostkowe
-- ✅ Czysta struktura projektu
-- ✅ Dokumentacja
+### Type Safety
 
-Środowisko jest skonfigurowane zgodnie z najlepszymi praktykami 2024/2025 roku.
+- Strict type hints throughout the codebase
+- Type aliases for improved readability
+- Full mypy compliance with strict mode
 
+### Performance Considerations
+
+- Character validation before column lookup (O(n) vs O(m) optimization)
+- Efficient edge case handling
+- Minimal DataFrame copying
+
+### Code Quality
+
+- Comprehensive validation (multi-layer defense)
+- Clear, human-readable comments
+- Professional code organization
+- Complete docstrings with examples
+
+### Edge Cases Handled
+
+- Double operators: `"a++b"`, `"a + +b"` → Rejected
+- Operators at boundaries: `"+b"`, `"a+"` → Rejected
+- Empty operators: `"+"` → Rejected
+- Multiple columns: `"a+b+c"` → Rejected
+- Invalid characters: `"a&b"` → Rejected
+- Non-existent columns → Rejected
+- Whitespace handling → Properly normalized
+
+## Notes for Reviewers
+
+This project demonstrates:
+
+- Modern Python standards (3.13, pyproject.toml, PEP 518)
+- Type safety with comprehensive type hints
+- Modern tooling (uv, ruff, mypy)
+- Complete test coverage
+- Clean project structure
+- Professional documentation
+- Performance awareness and optimization rationale
+- Data Engineering best practices awareness
