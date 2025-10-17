@@ -11,6 +11,52 @@ ALLOWED_CHARS: Final[set[str]] = set(
 )
 OPERATORS: Final[tuple[str, ...]] = ("+", "-", "*")
 
+# Characters that are NOT allowed in DataFrame column names to avoid ambiguity
+# with operators used in rules. Column names should follow snake_case convention.
+FORBIDDEN_IN_COLUMN_NAMES: Final[set[str]] = set(OPERATORS)
+
+
+def _parse_and_validate_rule(rule: str, operator: str, df: DataFrame) -> tuple[str, str] | None:
+    """Parse rule by operator and validate column names.
+
+    This helper function takes a mathematical rule like "col_a + col_b", splits it
+    by the operator, and checks that both resulting column names are valid and exist
+    in the DataFrame. It's designed to eliminate code duplication since we handle
+    three different operators in essentially the same way.
+
+    Args:
+        rule: Mathematical rule to parse (e.g., "sales + tax").
+        operator: The operator to split by ('+', '-', or '*').
+        df: DataFrame to validate column existence against.
+
+    Returns:
+        A tuple containing (column_one, column_two) if everything checks out,
+        or None if something goes wrong (wrong number of parts, empty names,
+        or columns that don't exist in the DataFrame).
+    """
+    separated_parts = rule.split(operator)
+
+    # We're expecting exactly two parts here - the column name before the operator
+    # and the column name after it. If we get more or fewer than two parts, something's
+    # wrong with the rule.
+    if len(separated_parts) != 2:
+        return None
+
+    column_one = separated_parts[0].strip()
+    column_two = separated_parts[1].strip()
+
+    # Both column names need to actually contain something after we strip whitespace.
+    # An empty string means the rule was something weird like "+ col_b" or "col_a +".
+    if not column_one or not column_two:
+        return None
+
+    # Finally, let's make sure both columns actually exist in the DataFrame. No point
+    # trying to do math on columns that aren't there.
+    if column_one not in df.columns or column_two not in df.columns:
+        return None
+
+    return (column_one, column_two)
+
 
 def add_virtual_column(
     df: DataFrame,
@@ -22,8 +68,13 @@ def add_virtual_column(
     This function validates column names and rules, then performs a mathematical
     operation on two columns and returns a DataFrame with the new computed column.
 
+    Important: Column names in the DataFrame must NOT contain operators (+, -, *).
+    For example, "col-one" or "user+id" are not supported to avoid parsing ambiguity.
+    Use snake_case convention (col_one, user_id) for all column names.
+
     Args:
         df: Input DataFrame to which the new column will be added.
+            Column names must use snake_case and not contain +, -, or * characters.
         rule: Mathematical rule defining the computation for the new column.
               Supported operations: addition (+), subtraction (-), multiplication (*).
               Example: "label_one + label_two" or "col1 * col2".
@@ -42,12 +93,24 @@ def add_virtual_column(
         0      1      3        4
         1      2      4        6
     """
-    # Step 1: Validate new column name (must follow snake_case)
-    # Note: In production data engineering environments, it's recommended to also
-    # reject names starting/ending with underscores (_userid, userid_) due to:
-    # - Conflicts with Python's private variable conventions
-    # - SQL quotation requirements
-    # - Limitations in BI tools (Tableau, Power BI, etc.)
+    # First, we need to make sure none of the existing column names in the DataFrame
+    # contain any mathematical operators. This is crucial because if someone named a
+    # column "col-one", and then wrote a rule like "col-one - col-two", we wouldn't
+    # know if that's supposed to be subtracting two columns or referencing a column
+    # literally named "col-one". By enforcing snake_case naming (like col_one instead
+    # of col-one), we avoid this entire category of parsing problems. We're using set
+    # intersection here which is more efficient than nested loops.
+    for column_name in df.columns:
+        if FORBIDDEN_IN_COLUMN_NAMES & set(str(column_name)):
+            return DataFrame()
+
+    # Now let's validate the name of the new column we're about to create. We require
+    # it to follow snake_case convention, which means it must contain at least one
+    # underscore and only use letters, numbers, and underscores. In a production
+    # environment, we'd probably also want to reject column names that start or end
+    # with underscores (like _userid or userid_) because they can cause headaches with
+    # Python's naming conventions, need special quoting in SQL, and sometimes don't
+    # play nice with BI tools like Tableau or Power BI.
     if not new_column or "_" not in new_column:
         return DataFrame()
 
@@ -55,93 +118,71 @@ def add_virtual_column(
         if not (char.isalnum() or char == "_"):
             return DataFrame()
 
-    # Step 2: Strip leading and trailing whitespace from the rule
+    # Let's clean up any whitespace from the beginning and end of the rule before
+    # we start parsing it.
     rule = rule.strip()
-
-    # Step 3: Validate characters in the rule (before splitting)
+    # Validate that every character in the rule is allowed. We do this before checking
+    # column existence for performance reasons: character validation is O(n) where n is
+    # the rule length (typically ~20 chars), while column lookup is O(m) where m is the
+    # number of DataFrame columns (often hundreds or thousands). This fail-fast approach
+    # optimizes for the common case of wide DataFrames with short rules.
     #
-    # Why validate characters before checking column existence?
-    # - Real-world DataFrames often have hundreds or thousands of columns
-    # - Character validation: O(n) where n = rule length (~20 chars)
-    # - Column existence check: O(m) where m = number of columns (could be 1000+)
-    # - For typical cases: 20 operations << 1000 operations
-    #
-    # Edge case consideration:
-    # This task uses a DataFrame with only 2 columns, so checking columns first
-    # might be faster for long rules with errors at the end. However, we optimize
-    # for the common data engineering scenario where DataFrames have dozens or
-    # hundreds of columns, while rules remain short.
-    #
-    # Alternative approaches for specific use cases:
-    # - Hybrid validation: if len(df.columns) < 10: skip char validation
-    # - Regex validation: faster but requires an additional library
-    # - Early exit: check only first N characters for quick failure detection
-
+    # For DataFrames with very few columns (<10), checking column existence first
+    # might be faster, but I prioritize the typical data engineering scenario where
+    # DataFrames are wide and rules are concise.
     for char in rule:
         if char not in ALLOWED_CHARS:
             return DataFrame()
 
-    # Step 4: Handle addition operation
+    # Here's an important check: we need to make sure the rule contains exactly one
+    # operator. If someone writes something like "a + b - c", we'd have no way to
+    # know which operation should happen first, or if they meant something else entirely.
+    # This check is technically redundant with len(separated_parts) != 2, but it provides
+    # fail-fast validation and clearer intent:we only support binary operations (exactly
+    # one operator between two columns).
+    operator_count = sum(1 for op in OPERATORS if op in rule)
+    if operator_count != 1:
+        return DataFrame()
+
+    # Now we handle addition. We use our helper function to parse the rule and validate
+    # that both column names are legitimate. If anything looks wrong, we bail out early.
+    # Otherwise, we create a copy of the DataFrame and add the new computed column.
     if "+" in rule:
-        separated_parts = rule.split("+")
-        # Ensure exactly 2 parts (one column + operator + another column)
-        if len(separated_parts) != 2:
+        columns = _parse_and_validate_rule(rule, "+", df)
+        if columns is None:
             return DataFrame()
 
-        column_one = separated_parts[0].strip()
-        column_two = separated_parts[1].strip()
-
-        # Verify that column names are not empty
-        if not column_one or not column_two:
-            return DataFrame()
-
-        # Check if both columns exist in the DataFrame
-        if column_one not in df.columns or column_two not in df.columns:
-            return DataFrame()
-
-        # Perform the operation and return result
+        column_one, column_two = columns
         result = df.copy()
         result[new_column] = df[column_one] + df[column_two]
         return result
 
-    # Step 5: Handle subtraction operation
+    # Subtraction works exactly the same way as addition, just with a different operator.
+    # The helper function handles all the parsing and validation for us.
     elif "-" in rule:
-        separated_parts = rule.split("-")
-        if len(separated_parts) != 2:
+        columns = _parse_and_validate_rule(rule, "-", df)
+        if columns is None:
             return DataFrame()
 
-        column_one = separated_parts[0].strip()
-        column_two = separated_parts[1].strip()
-
-        if not column_one or not column_two:
-            return DataFrame()
-
-        if column_one not in df.columns or column_two not in df.columns:
-            return DataFrame()
-
+        column_one, column_two = columns
         result = df.copy()
         result[new_column] = df[column_one] - df[column_two]
         return result
 
-    # Step 6: Handle multiplication operation
+    # And multiplication follows the same pattern. Notice how much cleaner this is
+    # compared to repeating all the validation logic three times.
     elif "*" in rule:
-        separated_parts = rule.split("*")
-        if len(separated_parts) != 2:
+        columns = _parse_and_validate_rule(rule, "*", df)
+        if columns is None:
             return DataFrame()
 
-        column_one = separated_parts[0].strip()
-        column_two = separated_parts[1].strip()
-
-        if not column_one or not column_two:
-            return DataFrame()
-
-        if column_one not in df.columns or column_two not in df.columns:
-            return DataFrame()
-
+        column_one, column_two = columns
         result = df.copy()
         result[new_column] = df[column_one] * df[column_two]
         return result
 
-    # Step 7: No recognized operator or invalid rule
+    # If we've gotten this far, it means the rule didn't contain any of our supported
+    # operators, which means it's not valid. This shouldn't actually be reachable given
+    # our earlier check for operator_count, but it's here as a safety net.
     else:
         return DataFrame()
